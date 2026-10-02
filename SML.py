@@ -1,8 +1,8 @@
 """
-Supple Minecraft Launcher - early self-made launcher prototype
+Supple Minecraft Launcher
 
 Scope:
-- Microsoft account sign-in via OAuth device-code flow
+- Microsoft account sign-in via OAuth device-code
 - Saves signed-in account list locally
 - Encrypts Microsoft token cache using Windows DPAPI
 - Easy account switching
@@ -10,11 +10,13 @@ Scope:
 - Launches installed Java versions directly from .minecraft
 - Detects and launches installed Minecraft-family Windows apps
   (Bedrock, Dungeons, Dungeons II, Legends) through Windows app activation
-
+- Lists historical versions archived by Omniarchive (https://omniarchive.net/)
+- Easy mod management and installation using Modrinth (https://modrinth.com/)
+  
 IMPORTANT:
 Minecraft Services currently rejects ordinary third-party Microsoft client IDs
 unless the app registration has been authorized/allowlisted for Minecraft
-Services. Put YOUR approved Microsoft application client ID into Settings.
+Services.
 
 Dependencies:
     py -m pip install msal requests minecraft-launcher-lib
