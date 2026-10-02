@@ -1,5 +1,5 @@
 """
-Supple Launcher - early self-made launcher prototype
+Supple Minecraft Launcher - early self-made launcher prototype
 
 Scope:
 - Microsoft account sign-in via OAuth device-code flow
@@ -76,7 +76,7 @@ try:
 except ImportError:
     minecraft_launcher_lib = None
 
-APP_NAME = "Supple Launcher"
+APP_NAME = "Supple Minecraft Launcher"
 APP_VERSION = "1.0.0"
 DEFAULT_CLIENT_ID = "6e72e008-b746-4490-ab99-ccff4ce31871"
 
@@ -189,7 +189,7 @@ def dpapi_decrypt(data: bytes) -> bytes:
 # ------------------------------- Utilities -------------------------------
 
 def ensure_local_storage():
-    for folder in (TEXTURES_DIR, FONTS_DIR, MODSTORAGE_DIR):
+    for folder in (TEXTURES_DIR, CAPES_DIR, FONTS_DIR, MODSTORAGE_DIR):
         folder.mkdir(parents=True, exist_ok=True)
 
 
@@ -3164,9 +3164,10 @@ def launch_aumid(appid: str):
 
 BASE_DIR = Path(__file__).resolve().parent
 TEXTURES_DIR = BASE_DIR / "textures"
+CAPES_DIR = TEXTURES_DIR / "capes"
 FONTS_DIR = BASE_DIR / "fonts"
 
-LOCAL_FOLDERS = [TEXTURES_DIR, FONTS_DIR]
+LOCAL_FOLDERS = [TEXTURES_DIR, CAPES_DIR, FONTS_DIR]
 for _folder in LOCAL_FOLDERS:
     try:
         _folder.mkdir(parents=True, exist_ok=True)
@@ -3283,9 +3284,18 @@ class Tooltip:
     def _show(self):
         if not self.text:
             return
+
         try:
-            x = self.widget.winfo_rootx() + 12
-            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 8
+            widget_x = self.widget.winfo_rootx()
+            widget_y = self.widget.winfo_rooty()
+            widget_w = max(1, self.widget.winfo_width())
+            widget_h = max(1, self.widget.winfo_height())
+            root = self.launcher if self.launcher is not None else self.widget.winfo_toplevel()
+            root.update_idletasks()
+            root_x = root.winfo_rootx()
+            root_y = root.winfo_rooty()
+            root_w = max(1, root.winfo_width())
+            root_h = max(1, root.winfo_height())
         except Exception:
             return
 
@@ -3293,13 +3303,37 @@ class Tooltip:
         self.window.overrideredirect(True)
         self.window.attributes("-topmost", True)
 
-        frame = tk.Frame(
+        transparent = "#ff00ff"
+        self.window.configure(bg=transparent)
+        if os.name == "nt":
+            try:
+                self.window.wm_attributes("-transparentcolor", transparent)
+            except Exception:
+                pass
+
+        outer = tk.Frame(
             self.window,
+            bg=transparent,
+            bd=0,
+            highlightthickness=0
+        )
+        outer.pack()
+
+        arrow_top = tk.Canvas(
+            outer,
+            width=16,
+            height=8,
+            bg=transparent,
+            highlightthickness=0,
+            bd=0
+        )
+
+        frame = tk.Frame(
+            outer,
             bg="#111111",
             bd=2,
             relief="solid"
         )
-        frame.pack()
 
         label = tk.Label(
             frame,
@@ -3316,7 +3350,62 @@ class Tooltip:
             )
         )
         label.pack()
+
+        # Build below first so Tk can report the final requested size.
+        arrow_top.pack(side="top")
+        frame.pack(side="top")
+        self.window.update_idletasks()
+
+        tip_w = max(1, self.window.winfo_reqwidth())
+        tip_h = max(1, self.window.winfo_reqheight())
+        target_x = widget_x + widget_w // 2
+
+        # Prefer below the control. If that would leave the launcher window,
+        # place the tooltip above it and flip the arrow.
+        below_y = widget_y + widget_h + 4
+        above_y = widget_y - tip_h - 4
+        place_below = below_y + tip_h <= root_y + root_h
+
+        if place_below:
+            y = max(root_y, below_y)
+        else:
+            y = max(root_y, above_y)
+            arrow_top.pack_forget()
+            frame.pack_forget()
+            frame.pack(side="top")
+            arrow_top.pack(side="top")
+
+        # Keep the entire tooltip within the launcher window.
+        x = target_x - tip_w // 2
+        max_x = root_x + root_w - tip_w
+        x = max(root_x, min(x, max_x))
+        max_y = root_y + root_h - tip_h
+        y = max(root_y, min(y, max_y))
+
         self.window.geometry(f"+{x}+{y}")
+        self.window.update_idletasks()
+
+        # Point the arrow at the center of the owning control while keeping it
+        # safely inside the tooltip box when the tooltip had to be clamped.
+        arrow_center = target_x - x
+        arrow_center = max(9, min(tip_w - 9, arrow_center))
+        arrow_top.config(width=tip_w)
+        if place_below:
+            arrow_top.create_polygon(
+                arrow_center - 7, 8,
+                arrow_center, 0,
+                arrow_center + 7, 8,
+                fill="#111111",
+                outline="#111111"
+            )
+        else:
+            arrow_top.create_polygon(
+                arrow_center - 7, 0,
+                arrow_center, 8,
+                arrow_center + 7, 0,
+                fill="#111111",
+                outline="#111111"
+            )
 
     def _leave(self, _event=None):
         if self.after_id is not None:
@@ -3332,7 +3421,6 @@ class Tooltip:
             except Exception:
                 pass
             self.window = None
-
 
 
 class PixelScrollbar(tk.Canvas):
@@ -4828,8 +4916,11 @@ class Launcher(tk.Tk):
             except Exception as exc:
                 log(f"Could not load application icon: {exc}")
 
+        # 1120x720 is the smallest supported window size.  It keeps the
+        # widest secondary pages (notably Accounts and Settings) fully
+        # visible instead of allowing the user to resize into clipped UI.
         self.geometry("1120x720")
-        self.minsize(920, 600)
+        self.minsize(1120, 720)
         self.configure(bg=self.BG)
 
         self.pixel_font_loaded = load_private_windows_font(GEOFONT_FILE)
@@ -5290,10 +5381,14 @@ class Launcher(tk.Tk):
         button._hover_target = 0.0
         button._logical_disabled = (state == "disabled")
         button._real_command = command
-        button._tooltip = Tooltip(
-            button,
-            tooltip or "",
-            launcher=self
+        button._tooltip = (
+            Tooltip(
+                button,
+                tooltip,
+                launcher=self
+            )
+            if tooltip
+            else None
         )
 
         self._update_button_visual(button)
@@ -5374,7 +5469,16 @@ class Launcher(tk.Tk):
         button._logical_disabled = not bool(enabled)
 
         if tooltip is not None:
-            button._tooltip.set_text(tooltip)
+            existing = getattr(button, "_tooltip", None)
+            if existing is None and tooltip:
+                existing = Tooltip(
+                    button,
+                    tooltip,
+                    launcher=self
+                )
+                button._tooltip = existing
+            elif existing is not None:
+                existing.set_text(tooltip)
 
         self._update_button_visual(button)
 
@@ -5594,9 +5698,10 @@ class Launcher(tk.Tk):
         sidebar = tk.Frame(self.main_pane, bg=self.PANEL_2, bd=3, relief="raised", width=225)
         self.main_pane.add(sidebar, minsize=170, width=225)
 
-        brand = tk.Frame(sidebar, bg=self.BLACK, bd=3, relief="sunken", height=78)
+        brand = tk.Frame(sidebar, bg=self.BLACK, bd=3, relief="sunken", height=68)
         brand.pack(fill="x", padx=8, pady=(8, 12))
         brand.pack_propagate(False)
+
         brand_label = tk.Label(
             brand,
             bg=self.BLACK,
@@ -5612,6 +5717,7 @@ class Launcher(tk.Tk):
         brand_label.pack(
             expand=True
         )
+
 
         self.game_buttons = {}
         game_specs = [
@@ -5978,8 +6084,32 @@ class Launcher(tk.Tk):
         self.update_navigation_button_states()
         self.clear_content()
 
-        # Reserve the bottom launch bar FIRST. This prevents the Java
-        # options panel from pushing it below the visible client area.
+        # Keep the affiliation notice outside the launch panel while reserving
+        # its space at the bottom of every game's main page.  Packing this first
+        # makes it sit directly below the Play panel.
+        affiliation_label = tk.Label(
+            self.content,
+            bg=self.BG,
+            fg=self.MUTED
+        )
+        self._set_pixel_label_text(
+            affiliation_label,
+            "Not affiliated with Mojang/Microsoft",
+            7,
+            self.MUTED,
+            align="left"
+        )
+        affiliation_label.pack(
+            side="bottom",
+            fill="x",
+            anchor="w",
+            padx=2,
+            pady=(5, 0)
+        )
+
+        # Reserve the bottom launch bar before the rest of the game page.
+        # This prevents the Java options panel from pushing it below the visible
+        # client area.
         play_bar = tk.Frame(
             self.content,
             bg=self.PANEL_2,
@@ -7655,7 +7785,7 @@ class Launcher(tk.Tk):
             self.set_button_enabled(
                 self.play_button,
                 True,
-                tooltip="Open the official purchase page."
+                tooltip=""
             )
         else:
             self.play_button._real_command = self.play_selected
@@ -7664,7 +7794,7 @@ class Launcher(tk.Tk):
             self.set_button_enabled(
                 self.play_button,
                 True,
-                tooltip="Launch the selected game."
+                tooltip=""
             )
 
 
