@@ -1,4 +1,4 @@
-# Supple Launcher
+# Supple Minecrat Launcher
 
 An independent third-party launcher interface for Minecraft games.
 
