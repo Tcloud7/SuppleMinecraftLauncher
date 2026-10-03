@@ -1,8 +1,8 @@
 """
-Supple Minecraft Launcher
+Supple Minecraft Launcher - early self-made launcher prototype
 
 Scope:
-- Microsoft account sign-in via OAuth device-code
+- Microsoft account sign-in via OAuth device-code flow
 - Saves signed-in account list locally
 - Encrypts Microsoft token cache using Windows DPAPI
 - Easy account switching
@@ -10,13 +10,11 @@ Scope:
 - Launches installed Java versions directly from .minecraft
 - Detects and launches installed Minecraft-family Windows apps
   (Bedrock, Dungeons, Dungeons II, Legends) through Windows app activation
-- Lists historical versions archived by Omniarchive (https://omniarchive.net/)
-- Easy mod management and installation using Modrinth (https://modrinth.com/)
-  
+
 IMPORTANT:
 Minecraft Services currently rejects ordinary third-party Microsoft client IDs
 unless the app registration has been authorized/allowlisted for Minecraft
-Services.
+Services. Put YOUR approved Microsoft application client ID into Settings.
 
 Dependencies:
     py -m pip install msal requests minecraft-launcher-lib
@@ -191,7 +189,7 @@ def dpapi_decrypt(data: bytes) -> bytes:
 # ------------------------------- Utilities -------------------------------
 
 def ensure_local_storage():
-    for folder in (TEXTURES_DIR, CAPES_DIR, FONTS_DIR, MODSTORAGE_DIR):
+    for folder in (TEXTURES_DIR, FONTS_DIR, MODSTORAGE_DIR):
         folder.mkdir(parents=True, exist_ok=True)
 
 
@@ -3166,10 +3164,9 @@ def launch_aumid(appid: str):
 
 BASE_DIR = Path(__file__).resolve().parent
 TEXTURES_DIR = BASE_DIR / "textures"
-CAPES_DIR = TEXTURES_DIR / "capes"
 FONTS_DIR = BASE_DIR / "fonts"
 
-LOCAL_FOLDERS = [TEXTURES_DIR, CAPES_DIR, FONTS_DIR]
+LOCAL_FOLDERS = [TEXTURES_DIR, FONTS_DIR]
 for _folder in LOCAL_FOLDERS:
     try:
         _folder.mkdir(parents=True, exist_ok=True)
@@ -3217,9 +3214,11 @@ GAME_TOOLS = {
     "Java Edition": [
         ("Main", "java_main"),
         ("Skins", "java_skins"),
-        ("Worlds", "java_worlds"),
-        ("Resource Packs", "java_resourcepacks"),
         ("Screenshots", "java_screenshots"),
+        ("Worlds", "java_worlds"),
+        ("Servers", "java_servers"),
+        ("Logs", "java_logs"),
+        ("Resource Packs", "java_resourcepacks"),
     ],
     "Bedrock": [
         ("Main", "bedrock_main"),
@@ -3286,18 +3285,9 @@ class Tooltip:
     def _show(self):
         if not self.text:
             return
-
         try:
-            widget_x = self.widget.winfo_rootx()
-            widget_y = self.widget.winfo_rooty()
-            widget_w = max(1, self.widget.winfo_width())
-            widget_h = max(1, self.widget.winfo_height())
-            root = self.launcher if self.launcher is not None else self.widget.winfo_toplevel()
-            root.update_idletasks()
-            root_x = root.winfo_rootx()
-            root_y = root.winfo_rooty()
-            root_w = max(1, root.winfo_width())
-            root_h = max(1, root.winfo_height())
+            x = self.widget.winfo_rootx() + 12
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 8
         except Exception:
             return
 
@@ -3305,37 +3295,13 @@ class Tooltip:
         self.window.overrideredirect(True)
         self.window.attributes("-topmost", True)
 
-        transparent = "#ff00ff"
-        self.window.configure(bg=transparent)
-        if os.name == "nt":
-            try:
-                self.window.wm_attributes("-transparentcolor", transparent)
-            except Exception:
-                pass
-
-        outer = tk.Frame(
-            self.window,
-            bg=transparent,
-            bd=0,
-            highlightthickness=0
-        )
-        outer.pack()
-
-        arrow_top = tk.Canvas(
-            outer,
-            width=16,
-            height=8,
-            bg=transparent,
-            highlightthickness=0,
-            bd=0
-        )
-
         frame = tk.Frame(
-            outer,
+            self.window,
             bg="#111111",
             bd=2,
             relief="solid"
         )
+        frame.pack()
 
         label = tk.Label(
             frame,
@@ -3352,62 +3318,7 @@ class Tooltip:
             )
         )
         label.pack()
-
-        # Build below first so Tk can report the final requested size.
-        arrow_top.pack(side="top")
-        frame.pack(side="top")
-        self.window.update_idletasks()
-
-        tip_w = max(1, self.window.winfo_reqwidth())
-        tip_h = max(1, self.window.winfo_reqheight())
-        target_x = widget_x + widget_w // 2
-
-        # Prefer below the control. If that would leave the launcher window,
-        # place the tooltip above it and flip the arrow.
-        below_y = widget_y + widget_h + 4
-        above_y = widget_y - tip_h - 4
-        place_below = below_y + tip_h <= root_y + root_h
-
-        if place_below:
-            y = max(root_y, below_y)
-        else:
-            y = max(root_y, above_y)
-            arrow_top.pack_forget()
-            frame.pack_forget()
-            frame.pack(side="top")
-            arrow_top.pack(side="top")
-
-        # Keep the entire tooltip within the launcher window.
-        x = target_x - tip_w // 2
-        max_x = root_x + root_w - tip_w
-        x = max(root_x, min(x, max_x))
-        max_y = root_y + root_h - tip_h
-        y = max(root_y, min(y, max_y))
-
         self.window.geometry(f"+{x}+{y}")
-        self.window.update_idletasks()
-
-        # Point the arrow at the center of the owning control while keeping it
-        # safely inside the tooltip box when the tooltip had to be clamped.
-        arrow_center = target_x - x
-        arrow_center = max(9, min(tip_w - 9, arrow_center))
-        arrow_top.config(width=tip_w)
-        if place_below:
-            arrow_top.create_polygon(
-                arrow_center - 7, 8,
-                arrow_center, 0,
-                arrow_center + 7, 8,
-                fill="#111111",
-                outline="#111111"
-            )
-        else:
-            arrow_top.create_polygon(
-                arrow_center - 7, 0,
-                arrow_center, 8,
-                arrow_center + 7, 0,
-                fill="#111111",
-                outline="#111111"
-            )
 
     def _leave(self, _event=None):
         if self.after_id is not None:
@@ -3423,6 +3334,7 @@ class Tooltip:
             except Exception:
                 pass
             self.window = None
+
 
 
 class PixelScrollbar(tk.Canvas):
@@ -5383,14 +5295,10 @@ class Launcher(tk.Tk):
         button._hover_target = 0.0
         button._logical_disabled = (state == "disabled")
         button._real_command = command
-        button._tooltip = (
-            Tooltip(
-                button,
-                tooltip,
-                launcher=self
-            )
-            if tooltip
-            else None
+        button._tooltip = Tooltip(
+            button,
+            tooltip or "",
+            launcher=self
         )
 
         self._update_button_visual(button)
@@ -5471,16 +5379,7 @@ class Launcher(tk.Tk):
         button._logical_disabled = not bool(enabled)
 
         if tooltip is not None:
-            existing = getattr(button, "_tooltip", None)
-            if existing is None and tooltip:
-                existing = Tooltip(
-                    button,
-                    tooltip,
-                    launcher=self
-                )
-                button._tooltip = existing
-            elif existing is not None:
-                existing.set_text(tooltip)
+            button._tooltip.set_text(tooltip)
 
         self._update_button_visual(button)
 
@@ -7787,7 +7686,7 @@ class Launcher(tk.Tk):
             self.set_button_enabled(
                 self.play_button,
                 True,
-                tooltip=""
+                tooltip="Open the official purchase page."
             )
         else:
             self.play_button._real_command = self.play_selected
@@ -7796,7 +7695,7 @@ class Launcher(tk.Tk):
             self.set_button_enabled(
                 self.play_button,
                 True,
-                tooltip=""
+                tooltip="Launch the selected game."
             )
 
 
